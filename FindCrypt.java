@@ -675,8 +675,8 @@
 	<https://www.gnu.org/licenses/why-not-lgpl.html>.
  */
 
+import java.awt.Color;
 import java.io.BufferedInputStream;
-import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -684,28 +684,32 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.lang.Math;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.channels.ReadableByteChannel;
-import java.security.Timestamp;
-import java.util.Arrays;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
+import java.util.Arrays;
 import java.util.zip.GZIPInputStream;
 
 import docking.widgets.dialogs.MultiLineMessageDialog;
+import ghidra.app.plugin.core.colorizer.ColorizingService;
 import ghidra.app.script.GhidraScript;
+import ghidra.app.tablechooser.AbstractComparableColumnDisplay;
+import ghidra.app.tablechooser.AddressableRowObject;
+import ghidra.app.tablechooser.StringColumnDisplay;
+import ghidra.app.tablechooser.TableChooserDialog;
+import ghidra.app.tablechooser.TableChooserExecutor;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressRange;
+import ghidra.program.model.address.AddressRangeImpl;
+import ghidra.program.model.address.AddressRangeIterator;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.listing.Function;
 import ghidra.util.Msg;
+import ghidra.util.task.CancelOnlyWrappingTaskMonitor;
 
 public class FindCrypt extends GhidraScript {
 	private static final int CRYPT_COUNTER = 20;
@@ -718,7 +722,8 @@ public class FindCrypt extends GhidraScript {
 		// Disable automatic script version check.
 		public static final boolean __FORCE_NO_SCRIPTUPDATE = false;
 
-		// Current script version, used for enforcing; modifications not recommended unless you know what you're doing.
+		// Current script version, used for enforcing; modifications not recommended
+		// unless you know what you're doing.
 		public static final String __SCRIPT_VERSION = "7";
 	}
 
@@ -760,7 +765,8 @@ public class FindCrypt extends GhidraScript {
 
 				if (_last > _local) {
 					MultiLineMessageDialog.showMessageDialog(null, "FindCrypt Ghidra",
-							"A new version of FindCrypt-Ghidra is available:", this.GetChangelog() + "\n\n\thttps://github.com/d3v1l401/FindCrypt-Ghidra", 1);
+							"A new version of FindCrypt-Ghidra is available:",
+							this.GetChangelog() + "\n\n\thttps://github.com/d3v1l401/FindCrypt-Ghidra", 1);
 				}
 
 				return true;
@@ -810,13 +816,12 @@ public class FindCrypt extends GhidraScript {
 			this._LOCAL = _basePath;
 		}
 
-
 	}
 
 	public static class DatabaseManager {
 		// Structure of database file, for reference.
 		/*******************************************************************
-		 | MAGIC (4)    | Total Entries (2)           	                   |
+		 | MAGIC (4)    | Total Entries (2)                                |
 		 | NameSize (4) | Name (x) | isCompressed(1) | ESize(4) | BSize(4) |
 		 | Buffer (x)   | ...                                              |
 		 ******************************************************************/
@@ -834,9 +839,9 @@ public class FindCrypt extends GhidraScript {
 			}
 		}
 
-		private boolean   		 	_loaded = false;
-		private static final int 	_EXPECTED_MAGIC = 0xD3010401;
-		private short     		 	_totalEntries 	 = 0;
+		private boolean _loaded                  = false;
+		private static final int _EXPECTED_MAGIC = 0xD3010401;
+		private short _totalEntries              = 0;
 
 		private ArrayList<EntryInfo> _consts = new ArrayList<>();
 
@@ -845,9 +850,7 @@ public class FindCrypt extends GhidraScript {
 		}
 
 		public DatabaseManager(String _path) {
-
 			if (!this._loaded) {
-
 				try {
 					DataInputStream _stream = new DataInputStream(new FileInputStream(_path));
 					var _curMagic = _stream.readInt();
@@ -857,8 +860,10 @@ public class FindCrypt extends GhidraScript {
 
 					this._totalEntries = _stream.readShort();
 					if (this._totalEntries == 0) {
-						GuiHandler.ShowMessage("FindCrypt - Warning", "Something unusual happened while loading the database.",
-								"The database contains no entries, while this is not error, the script will not scan anything", 2);
+						GuiHandler.ShowMessage("FindCrypt - Warning",
+								"Something unusual happened while loading the database.",
+								"The database contains no entries, while this is not error, the script will not scan anything",
+								2);
 						return; // No need to proceed at all.
 					}
 
@@ -886,10 +891,10 @@ public class FindCrypt extends GhidraScript {
 							int res = 0;
 							byte buf[] = new byte[1024];
 							while (res >= 0) {
-							    res = gzin.read(buf, 0, buf.length);
-							    if (res > 0) {
-							        byteout.write(buf, 0, res);
-							    }
+								res = gzin.read(buf, 0, buf.length);
+								if (res > 0) {
+									byteout.write(buf, 0, res);
+								}
 							}
 							byte uncompressed[] = byteout.toByteArray();
 
@@ -902,7 +907,8 @@ public class FindCrypt extends GhidraScript {
 					this._loaded = true;
 
 				} catch (Exception e) {
-					GuiHandler.ShowMessage("FindCrypt - Error" , "An error happened while loading the database.", e.getMessage(), 0);
+					GuiHandler.ShowMessage("FindCrypt - Error", "An error happened while loading the database.",
+							e.getMessage(), 0);
 				}
 
 			}
@@ -913,10 +919,11 @@ public class FindCrypt extends GhidraScript {
 	public static class WorksetManager {
 		private static final String __FCUPD_BASEURL = "https://raw.githubusercontent.com/d3v1l401/FindCrypt-Ghidra/master/findcrypt_ghidra";
 
-		private static final String __FCDATA_DIR = System.getProperty("user.home") + File.separator + "findcrypt_ghidra" + File.separator;
+		private static final String __FCDATA_DIR = System.getProperty("user.home") + File.separator + "findcrypt_ghidra"
+				+ File.separator;
 
 		private static DatabaseManager _dbHandler;
-		private static UpdateManager   _updHandler;
+		private static UpdateManager _updHandler;
 
 		public static boolean Initialize() {
 			_dbHandler = new DatabaseManager(__FCDATA_DIR + "database.d3v");
@@ -942,34 +949,123 @@ public class FindCrypt extends GhidraScript {
 
 	public class FoundCryptoEntry {
 		private String _name;
-		private Address _address;
+		private AddressSet _addresses;
 		private Function _function;
+		private double _detectionRate;
 
-		public FoundCryptoEntry(String _name, Address _address, Function _function) {
+		public FoundCryptoEntry(String _name, AddressSet _addresses, double _detectionRate) {
 			this._name = _name;
-			this._address = _address;
-			this._function = _function;
+			this._addresses = _addresses;
+			this._function = getFunctionContaining(_addresses.getMinAddress());
+			this._detectionRate = _detectionRate;
 		}
 
 		public String toString() {
-			if (_function != null) {
-				return String.format("%s (%s) -> %s\n", _function.getName(), _name, _address.toString());
-			} else {
-				return String.format("%s -> %s\n", _name, _address.toString());
-			}
+			if (_function != null)
+				return String.format("%s (%s) -> %s\n", _function.getName(), _name, _addresses.getMinAddress().toString());
+
+			return String.format("%s -> %s\n", _name, _addresses.getMinAddress().toString());
+		}
+
+		public Boolean isCompleteMatch() {
+			return _detectionRate == 1.0f;
 		}
 	}
 
 	public class FoundCryptoEntries extends ArrayList<FoundCryptoEntry> {
 	}
 
+	private AddressRange inflateRange(AddressRange range) {
+		return new AddressRangeImpl(currentProgram.getListing().getCodeUnitContaining(range.getMinAddress()).getMinAddress(),
+				currentProgram.getListing().getCodeUnitContaining(range.getMaxAddress()).getMaxAddress());
+	}
+
+	private TableChooserExecutor createTableExecutor() {
+		TableChooserExecutor executor = new TableChooserExecutor() {
+			ColorizingService colorizingService = state.getTool().getService(ColorizingService.class);
+
+			@Override
+			public String getButtonName() {
+				return "Mark";
+			}
+
+			@Override
+			public boolean execute(AddressableRowObject rowObject) {
+				if(colorizingService == null)
+					return false;
+
+				ResultRow row = (ResultRow)rowObject;
+				Color c = colorizingService.getColorFromUser(new Color(200, 200, 255));
+
+				var transaction = currentProgram.startTransaction("Mark block");
+				AddressRangeIterator it = row.addresses.getAddressRanges();
+				int i = 0;
+				while(it.hasNext()) {
+					AddressRange r = it.next();
+					if(getPreComment(r.getMinAddress()) == null)
+						setPreComment(r.getMinAddress(), "FindCrypt " + row.name + " #" + i++);
+					colorizingService.setBackgroundColor(new AddressSet(inflateRange(r)), c);
+				}
+				currentProgram.endTransaction(transaction, true);
+
+				return false;
+			}
+		};
+
+		return executor;
+	}
+
+	private class ResultRow implements AddressableRowObject {
+
+		private AddressSet addresses;
+		private String name;
+		private double detectionRate;
+
+		public ResultRow(FoundCryptoEntry entry) {
+			this.addresses= entry._addresses;
+			this.name = entry._name;
+			this.detectionRate = entry._detectionRate;
+		}
+
+		@Override
+		public Address getAddress() {
+			return addresses.getMinAddress();
+		}
+
+	}
+
+	private void configureTableColumns(TableChooserDialog dialog) {
+		dialog.addCustomColumn(new StringColumnDisplay() {
+			@Override
+			public String getColumnValue(AddressableRowObject rowObject) {
+				return ((ResultRow)rowObject).name;
+			}
+
+			@Override
+			public String getColumnName() {
+				return "Name";
+			}
+		});
+
+		dialog.addCustomColumn(new AbstractComparableColumnDisplay<Double>() {
+			@Override
+			public Double getColumnValue(AddressableRowObject rowObject) {
+				return ((ResultRow)rowObject).detectionRate;
+			}
+
+			@Override
+			public String getColumnName() {
+				return "Detection Rate";
+			}
+		});
+	}
+
 	@Override
 	protected void run() throws Exception {
 
-		println("FindCrypt - Ghidra Edition by d3vil401 (https://d3vsite.org)\n" +
-					"Special thanks to Pawlos for fragmented constant scans\n" +
-					"Original idea by Ilfak Guilfanov (http://hexblog.com)" +
-					"\n");
+		println("FindCrypt - Ghidra Edition by d3vil401 (https://d3vsite.org)\n"
+				+ "Special thanks to Pawlos for fragmented constant scans\n"
+				+ "Original idea by Ilfak Guilfanov (http://hexblog.com)" + "\n");
 
 		Boolean headless = isRunningHeadless();
 
@@ -978,60 +1074,80 @@ public class FindCrypt extends GhidraScript {
 			return;
 		}
 
+		var startTime = System.currentTimeMillis();
+
 		WorksetManager.Initialize();
 
 		println("Loaded " + WorksetManager.GetDatabaseSize() + " signatures.");
+		monitor.initialize(WorksetManager.GetDatabaseSize());
+		monitor.setProgress(0);
 
-		var _formatted = "";
-
-		var foundEntries = new FoundCryptoEntries();
-
-		for (var alg: WorksetManager.GetDB()) {
-			monitor.checkCanceled();
-
-			var _found = currentProgram.getMemory().findBytes(currentProgram.getMinAddress(), alg._buffer, null, true, monitor);
-			if (_found != null) {
-				var function = currentProgram.getFunctionManager().getFunctionContaining(_found);
-				foundEntries.add(new FoundCryptoEntry(alg._name, _found, function));
-			} else {
-				if (alg._elementSize < SKIP_SMALLER_SUB_CONSTANTS) {
-					continue; //skip too small constants - too many false positvies
-				}
-				var size = alg._buffer.length;
-				byte[] part = new byte[alg._elementSize];
-				var realHowManySubItems = size/alg._elementSize;
-				var howManySubItemsToCheck = Math.min(realHowManySubItems, CRYPT_COUNTER);
-				var howManyFound = 0;
-				ArrayList<Address> _addresses = new ArrayList<>();
-				for(var i = 0; i < howManySubItemsToCheck; i++) {
-					var offset = i * alg._elementSize;
-					System.arraycopy(alg._buffer, offset, part, 0, alg._elementSize);
-					var _foundPart = currentProgram.getMemory().findBytes(currentProgram.getMinAddress(), part, null, true, monitor);
-					if (_foundPart != null) {
-						_addresses.add(_foundPart);
-						howManyFound++;
-					}
-				}
-				if (howManyFound / realHowManySubItems >= DETECT_THRESHOLD) {
-					var firstAddress = _addresses.get(0);
-					var function = currentProgram.getFunctionManager().getFunctionContaining(firstAddress);
-					foundEntries.add(new FoundCryptoEntry(alg._name, firstAddress, function));
-				}
-			}
+		var CancelMonitor = new CancelOnlyWrappingTaskMonitor(monitor);
+		var memory = getCurrentProgram().getMemory();
+		var searchStart = memory.getMinAddress();
+		var searchEnd = memory.getMaxAddress();
+		if(currentSelection != null && memory.contains(currentSelection)) {
+			searchStart = currentSelection.getMinAddress();
+			searchEnd = currentSelection.getMaxAddress();
 		}
 
-		var _ctr = 0;
-		for (var entry: foundEntries) {
-			_formatted += entry.toString()+"\r\n";
-			_ctr++;
+		var foundEntries = new FoundCryptoEntries();
+		for (var alg : WorksetManager.GetDB()) {
+			monitor.checkCanceled();
+			monitor.setMessage("Looking for " + alg._name);
+
+			var addressSet = new AddressSet();
+			var detectionRate = 0.0;
+
+			var _found = memory.findBytes(searchStart, searchEnd, alg._buffer, null, true, CancelMonitor);
+			if (_found != null) {
+				addressSet.add(_found, _found.add(alg._buffer.length));
+				detectionRate = 1.0;
+			} else {
+				if (alg._elementSize < SKIP_SMALLER_SUB_CONSTANTS) {
+					continue; // skip too small constants - too many false positives
+				}
+				var totalSubItems = alg._buffer.length / alg._elementSize;
+				var subItemsToCheck = Math.min(totalSubItems, CRYPT_COUNTER);
+
+				for (var i = 0; i < subItemsToCheck; i++) {
+					var offset = i * alg._elementSize;
+					var _foundPart = memory.findBytes(searchStart, searchEnd, Arrays.copyOfRange(alg._buffer, offset, offset + alg._elementSize), null, true, CancelMonitor);
+					if (_foundPart != null)
+						addressSet.add(_foundPart, _foundPart.add(alg._elementSize));
+				}
+				detectionRate = (double)addressSet.getNumAddressRanges() / totalSubItems;
+			}
+
+			if(!addressSet.isEmpty() && detectionRate >= DETECT_THRESHOLD)
+				foundEntries.add(new FoundCryptoEntry(alg._name, addressSet, detectionRate));
+
+			monitor.incrementProgress(1);
+		}
+
+		var _formatted = "";
+		for (var entry : foundEntries) {
+			_formatted += entry.toString() + System.lineSeparator();
+			createBookmark(entry._addresses.getMinAddress(), "FindCrypt",
+					String.format("%s dr=%.2f", entry._name, entry._detectionRate));
+
 		}
 
 		// Only show results if something has been found.
-		if (_ctr >= 1) {
-			if (headless) {
-				println("A total of " + _ctr + " signatures have been found.\r\n"+_formatted);
-			} else {
-				GuiHandler.ShowMessage("FindCrypt Ghidra", "A total of " + _ctr + " signatures have been found.", _formatted, 1);
+		if (foundEntries.size() >= 1) {
+			String messageString = String.format("A total of %d signatures have been found in %dms.", foundEntries.size(),
+					System.currentTimeMillis() - startTime);
+			if (headless)
+				println(messageString + System.lineSeparator() + _formatted);
+			else
+			{
+				println(messageString);
+				var dialog = createTableChooserDialog("FindCrypt", createTableExecutor());
+				configureTableColumns(dialog);
+				for (var e : foundEntries)
+					dialog.add(new ResultRow(e));
+
+				dialog.show();
 			}
 		}
 
